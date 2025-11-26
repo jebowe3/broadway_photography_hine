@@ -1,0 +1,1455 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <title>Broadway Vector Tiles</title>
+
+  <!-- MapLibre + fonts -->
+  <link href="https://unpkg.com/maplibre-gl@^5.6.2/dist/maplibre-gl.css" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Jacques+Francois&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@400;700&display=swap" rel="stylesheet" />
+
+  <style>
+    :root {
+      --bg: #f9f7f1;
+      --ink: #333;
+      --ink-muted: #555;
+      --panel: #e6d1aa;
+      --shadow-sm: 2px 2px 6px rgba(0, 0, 0, 0.1);
+      --shadow-lg: 0 0 12px rgba(0, 0, 0, 0.3);
+      --radius: 8px;
+      --gap: 12px;
+    }
+
+    @font-face {
+      font-family: "CGHine";
+      src: url("./font/CgHine-Regular.ttf") format("truetype");
+      font-weight: normal;
+      font-style: normal;
+      font-display: swap;
+    }
+
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      background: var(--bg);
+    }
+
+    #map-container,
+    #map {
+      position: absolute;
+      inset: 0;
+    }
+
+    #slider-container {
+      font-family: "Jacques Francois", serif;
+      background-color: var(--bg);
+      border: 1px solid #ccc;
+      padding: 12px;
+      width: 280px;
+      box-shadow: var(--shadow-sm);
+      border-radius: 6px;
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      z-index: 2;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    #opacity-labels,
+    #slider-container label {
+      font-size: 0.9em;
+      color: var(--ink-muted);
+    }
+
+    #opacity-labels {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 6px;
+      user-select: none;
+    }
+
+    input[type="range"] {
+      width: 100%;
+    }
+
+    #time-year {
+      font-size: 0.9em;
+      margin-left: 8px;
+      color: var(--ink-muted);
+    }
+
+    .maplibregl-popup-content {
+      max-height: calc(100vh - 40px);
+      overflow-y: auto;
+    }
+
+    .maplibregl-popup {
+      max-width: 300px;
+    }
+
+    #fullscreen-overlay {
+      position: fixed;
+      inset: 0;
+      width: 100vw;
+      height: 100vh;
+      background-color: rgba(0, 0, 0, 0.8);
+      z-index: 9999;
+      display: none;
+      justify-content: center;
+      align-items: center;
+    }
+
+    #overlay-content {
+      display: flex;
+      width: 90%;
+      height: 90%;
+      background-color: var(--bg);
+      border-radius: var(--radius);
+      overflow: hidden;
+      box-shadow: var(--shadow-lg);
+    }
+
+    #overlay-sidebar {
+      width: 30%;
+      padding: 24px;
+      box-sizing: border-box;
+      background-color: var(--panel);
+      background-image: url("png/clean-textile.png");
+      background-repeat: repeat;
+      font-family: "Fraunces", serif;
+      color: var(--ink);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      height: 100%;
+      overflow: hidden;
+    }
+
+    #photo-description {
+      overflow-y: auto;
+      margin-top: 8px;
+      font-size: 0.9em;
+      color: #333;
+    }
+
+    #overlay-title {
+      font-size: 1.2em;
+      line-height: 1.4;
+      word-wrap: break-word;
+      text-align: left;
+    }
+
+    #overlay-image-container {
+      width: 70%;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background-color: #222;
+      padding: 24px;
+      box-sizing: border-box;
+      overflow: hidden;
+    }
+
+    #rephoto-wrap {
+      position: absolute;
+      inset: 12px;
+      box-sizing: border-box;
+      transform-origin: 0 0;
+      touch-action: none;
+      will-change: transform;
+      overflow: hidden;
+    }
+
+    #rephoto-wrap img {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      border-radius: 4px;
+      transition: opacity 0.3s ease;
+      user-select: none;
+      -webkit-user-drag: none;
+    }
+
+    #historic-image {
+      z-index: 1;
+      opacity: 1;
+    }
+
+    #rephoto-image {
+      z-index: 2;
+      opacity: 0;
+    }
+
+    #overlay-close-btn {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      background-color: rgba(255, 255, 255, 0.9);
+      border: none;
+      border-radius: 50%;
+      font-size: 1.2em;
+      padding: 6px 10px;
+      cursor: pointer;
+      font-weight: bold;
+      line-height: 1;
+      color: #333;
+      transition: background-color 0.2s;
+      z-index: 9000;
+    }
+
+    #overlay-close-btn:hover {
+      background-color: #fff;
+    }
+
+    #fullscreen-overlay label[for="dissolve-slider"] {
+      font-size: 12px;
+      margin-top: 20px;
+      display: block;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      #rephoto-wrap img {
+        transition: none;
+      }
+    }
+
+    #zoom-controls {
+      position: absolute;
+      left: 16px;
+      top: 16px;
+      display: flex;
+      gap: 8px;
+      z-index: 9001;
+    }
+
+    #zoom-controls button {
+      background: rgba(255, 255, 255, 0.95);
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-size: 14px;
+      cursor: pointer;
+      box-shadow: 2px 2px 6px rgba(0, 0, 0, 0.1);
+    }
+
+    #zoom-controls button:hover {
+      background: #fff;
+    }
+
+    #layer-toggle {
+      font-family: "Fraunces", serif;
+      font-size: 14px;
+      line-height: 1.4;
+      color: var(--ink-muted);
+    }
+
+    #layer-checkboxes {
+      display: flex;
+      flex-direction: column;
+      gap: 0.2em;
+      padding-left: 0;
+      margin: 0;
+    }
+
+    #layer-checkboxes>label {
+      display: block;
+      padding-left: 1.5em;
+      font-size: 0.95em;
+      color: var(--ink-muted);
+      margin: 0;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="map-container">
+    <div id="map"></div>
+  </div>
+
+  <aside id="slider-container" aria-label="Map controls">
+    <section id="opacity-slider">
+      <div id="opacity-labels"><span>Historic Map</span><span>Contemporary Map</span></div>
+      <input type="range" id="slider" min="0" max="100" value="0" />
+    </section>
+
+    <section id="time-slider">
+      <label for="time-slider-input">Historic Progression of Broadway</label>
+      <input type="range" id="time-slider-input" min="1776" max="1906" value="1776" step="1" />
+      <span id="time-year" aria-live="polite">1776</span>
+    </section>
+
+    <section id="layer-toggle">
+      <div id="layer-checkboxes">
+        <label class="layer-checkbox">
+          <input type="checkbox" id="photo-toggle" checked /> Photos
+        </label>
+        <label class="layer-checkbox">
+          <input type="checkbox" id="broadway-toggle" checked /> Broadway
+        </label>
+        <label class="layer-checkbox">
+          <input type="checkbox" id="subway-toggle" /> Subway
+        </label>
+        <label class="layer-checkbox">
+          <input type="checkbox" id="elevated-toggle" /> Elevated Train
+        </label>
+        <label class="layer-checkbox">
+          <input type="checkbox" id="indian-trails-toggle" /> Indigenous Trails (Speculative)
+        </label>
+        <label class="layer-checkbox">
+          <input type="checkbox" id="neighborhood-toggle" /> Neighborhoods
+        </label>
+      </div>
+    </section>
+  </aside>
+
+  <div id="fullscreen-overlay" role="dialog" aria-modal="true" aria-label="Historic photo viewer">
+    <div id="overlay-content">
+      <div id="overlay-sidebar">
+        <div id="overlay-title">Photo Title Placeholder</div>
+
+        <div id="overlay-navigation" style="display: flex; gap: 12px; align-items: center; font-size: 12px; color: #555; cursor: pointer;">
+          <div style="display: flex; align-items: center; gap: 4px;">
+            <span id="prev-label">Previous</span>
+            <button id="prev-btn" aria-label="Previous photo">&larr;</button>
+          </div>
+          <div style="display: flex; align-items: center; gap: 4px;">
+            <button id="next-btn" aria-label="Next photo">&rarr;</button>
+            <span id="next-label">Next</span>
+          </div>
+        </div>
+
+        <label for="dissolve-slider">Dissolve Between Historic and Rephoto</label>
+        <input type="range" id="dissolve-slider" min="0" max="100" value="0" />
+      </div>
+
+      <div id="overlay-image-container">
+        <button id="overlay-close-btn" aria-label="Close viewer">&times;</button>
+        <div id="rephoto-wrap">
+          <img id="historic-image" src="" alt="Historic" />
+          <img id="rephoto-image" src="" alt="Re-photograph" />
+        </div>
+
+        <div id="zoom-controls" role="toolbar" aria-label="Image zoom controls">
+          <button id="zoom-out" aria-label="Zoom out">−</button>
+          <button id="zoom-in" aria-label="Zoom in">+</button>
+          <button id="zoom-reset" aria-label="Reset zoom">Reset</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/maplibre-gl@^5.6.2/dist/maplibre-gl.js"></script>
+  <script src="https://unpkg.com/@panzoom/panzoom/dist/panzoom.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+
+  <script>
+    /* =====================================================
+         DOM references
+    ====================================================== */
+    const overlay = document.getElementById("fullscreen-overlay");
+    const container = document.getElementById("overlay-image-container");
+    const wrapper = document.getElementById("rephoto-wrap");
+    const historic = document.getElementById("historic-image");
+    const rephoto = document.getElementById("rephoto-image");
+    const dissolve = document.getElementById("dissolve-slider");
+
+    const timeSlider = document.getElementById("time-slider-input");
+    const timeYear = document.getElementById("time-year");
+    const slider = document.getElementById("slider");
+
+    const photoToggle = document.getElementById("photo-toggle");
+    const broadwayToggle = document.getElementById("broadway-toggle");
+    const subwayToggle = document.getElementById("subway-toggle");
+    const elevatedToggle = document.getElementById("elevated-toggle");
+    const indianTrailsToggle = document.getElementById("indian-trails-toggle");
+    const neighborhoodToggle = document.getElementById("neighborhood-toggle");
+
+    const zoomInBtn = document.getElementById("zoom-in");
+    const zoomOutBtn = document.getElementById("zoom-out");
+    const zoomResetBtn = document.getElementById("zoom-reset");
+
+    ["prev-btn", "next-btn", "prev-label", "next-label"].forEach(id => {
+      const el = document.getElementById(id);
+      el.addEventListener("click", e => e.stopPropagation());
+      el.addEventListener("pointerdown", e => e.stopPropagation());
+    });
+
+    /* =====================================================
+       Panzoom
+    ====================================================== */
+    const pz = Panzoom(wrapper, {
+      maxScale: 4,
+      contain: "inside"
+    });
+    let containReleased = false;
+
+    const enforceContain = () => {
+      containReleased = false;
+      pz.setOptions({
+        contain: "inside"
+      });
+    };
+    const releaseContain = () => {
+      if (containReleased) return;
+      containReleased = true;
+      pz.setOptions({
+        contain: false
+      });
+    };
+
+    wrapper.addEventListener("wheel", (e) => {
+      e.preventDefault();
+      releaseContain();
+      pz.zoomWithWheel(e);
+    }, {
+      passive: false
+    });
+
+    wrapper.addEventListener("pointerdown", releaseContain);
+
+    const MAX_SCALE = 4;
+    const MIN_SCALE = 1;
+
+    function getCurrentScale() {
+      if (typeof pz.getScale === "function") return pz.getScale();
+      const m = new DOMMatrixReadOnly(getComputedStyle(wrapper).transform);
+      return m.a || 1;
+    }
+
+    function clamp(val, min, max) {
+      return Math.max(min, Math.min(max, val));
+    }
+
+    function zoomBy(factor) {
+      releaseContain();
+      const current = getCurrentScale();
+      const next = clamp(current * factor, MIN_SCALE, MAX_SCALE);
+
+      const rect = container.getBoundingClientRect();
+      const point = {
+        clientX: rect.left + rect.width / 2,
+        clientY: rect.top + rect.height / 2
+      };
+
+      if (typeof pz.zoomToPoint === "function") {
+        pz.zoomToPoint(next, point);
+      } else if (typeof pz.zoom === "function") {
+        pz.zoom(next, {
+          animate: true
+        });
+      }
+    }
+
+    zoomInBtn.addEventListener("click", () => zoomBy(1.25));
+    zoomOutBtn.addEventListener("click", () => zoomBy(1 / 1.25));
+    zoomResetBtn.addEventListener("click", () => {
+      enforceContain();
+      resetToFit();
+    });
+
+    function enterFullscreenSafely() {
+      if (document.fullscreenElement) return;
+
+      const target = overlay; // fullscreen the overlay, not the whole doc
+
+      if (target.requestFullscreen) {
+        target.requestFullscreen().catch(err => {
+          console.warn("Fullscreen request failed:", err);
+        });
+      }
+    }
+
+    /* =====================================================
+       Map setup
+    ====================================================== */
+    const map = new maplibregl.Map({
+      container: "map",
+      style: "assets/styles/style.json",
+      center: [-73.92, 40.79],
+      zoom: 11,
+    });
+    map.addControl(new maplibregl.NavigationControl(), "top-left");
+
+    let originalGeoJsonData = null;
+    let photoFeatures = [];
+    let currentPhotoIndex = -1;
+
+    // Nav state: ALWAYS derived from photoFeatures now
+    let navPhotoFeatures = [];
+    const idToNavIndex = new Map();
+
+    let navBusy = false; // <— add here
+
+    function updateNavUiEnabledState() {
+      const has = navPhotoFeatures.length > 0;
+      document.getElementById("prev-btn").disabled = !has;
+      document.getElementById("next-btn").disabled = !has;
+      document.getElementById("prev-label").style.opacity = has ? 1 : 0.5;
+      document.getElementById("next-label").style.opacity = has ? 1 : 0.5;
+    }
+
+    function rebuildNavList() {
+      if (!photoToggle.checked) {
+        navPhotoFeatures = [];
+        idToNavIndex.clear();
+
+        if (overlay.style.display !== "none") {
+          overlay.style.display = "none";
+          document.documentElement.style.overflow = "";
+          currentPhotoIndex = -1;
+        }
+
+        if (window.currentPopup) {
+          window.currentPopup.remove();
+          window.currentPopup = null;
+        }
+
+        updateNavUiEnabledState();
+        return;
+      }
+
+      navPhotoFeatures = photoFeatures.slice();
+      idToNavIndex.clear();
+      navPhotoFeatures.forEach((f, i) => idToNavIndex.set(f.id, i));
+
+      if (overlay.style.display !== "none") {
+        if (navPhotoFeatures.length === 0) {
+          overlay.style.display = "none";
+          document.documentElement.style.overflow = "";
+          currentPhotoIndex = -1;
+        } else if (currentPhotoIndex >= navPhotoFeatures.length) {
+          currentPhotoIndex = navPhotoFeatures.length - 1;
+          updateOverlayByIndex(currentPhotoIndex);
+        }
+      }
+
+      updateNavUiEnabledState();
+    }
+
+    /* =====================================================
+       Utilities
+    ====================================================== */
+    const raf = () => new Promise((r) => requestAnimationFrame(r));
+
+    async function loadSVGAsImage(name, url) {
+      const response = await fetch(url);
+      const svgText = await response.text();
+      const img = new Image();
+      const svgBlob = new Blob([svgText], {
+        type: "image/svg+xml"
+      });
+      const urlObj = URL.createObjectURL(svgBlob);
+
+      return new Promise((resolve, reject) => {
+        img.onload = async () => {
+          const viewBoxMatch = svgText.match(/viewBox="([\d.\s]+)"/);
+          let size = 64;
+          if (viewBoxMatch) {
+            const [, , w, h] = viewBoxMatch[1].split(" ").map(Number);
+            size = Math.max(w, h) || 64;
+          }
+          const canvas = document.createElement("canvas");
+          canvas.width = canvas.height = size;
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(img, 0, 0, size, size);
+          const bitmap = await createImageBitmap(canvas);
+          if (!map.hasImage(name)) map.addImage(name, bitmap, {
+            pixelRatio: 1
+          });
+          URL.revokeObjectURL(urlObj);
+          resolve();
+        };
+        img.onerror = reject;
+        img.src = urlObj;
+      });
+    }
+
+    function filterByYear(year) {
+      if (!originalGeoJsonData) return {
+        type: "FeatureCollection",
+        features: []
+      };
+      const features = originalGeoJsonData.features.filter((f) => {
+        const {
+          syear,
+          eyear
+        } = f.properties;
+        return year >= syear && year <= eyear;
+      });
+      return {
+        type: "FeatureCollection",
+        features
+      };
+    }
+
+    function sizeWrapperToContainerBox() {
+      const rect = container.getBoundingClientRect();
+      const inset = 12 * 2;
+      wrapper.style.width = Math.max(0, rect.width - inset) + "px";
+      wrapper.style.height = Math.max(0, rect.height - inset) + "px";
+    }
+
+    function resetToFit() {
+      pz.setOptions({
+        minScale: 1
+      });
+      if (typeof pz.reset === "function") {
+        pz.reset({
+          animate: false
+        });
+      } else {
+        if (typeof pz.zoom === "function") pz.zoom(1, {
+          animate: false
+        });
+        if (typeof pz.pan === "function") pz.pan(0, 0, {
+          animate: false
+        });
+      }
+    }
+
+    function nudgeToImageRect() {
+      /* no-op */ }
+
+    function centerNow() {
+      sizeWrapperToContainerBox();
+      resetToFit();
+    }
+
+    async function openOverlayStable() {
+      overlay.style.display = "flex";
+      document.documentElement.style.overflow = "hidden";
+
+      // Let layout settle before measuring
+      overlay.getBoundingClientRect();
+      await raf();
+      await raf();
+    }
+
+    async function waitImageReady(img) {
+      if (img.decode) {
+        try {
+          await img.decode();
+        } catch {}
+      } else if (!img.complete) {
+        await new Promise((res) => img.addEventListener("load", res, {
+          once: true
+        }));
+      }
+      await raf();
+    }
+
+    function buildPhotoPopupDom({
+      thumbUrl,
+      fullUrl,
+      title,
+      onThumbClick
+    }) {
+      const popupContainer = document.createElement("div");
+      Object.assign(popupContainer.style, {
+        maxWidth: "300px",
+        fontFamily: "'Fraunces', serif",
+        textAlign: "left",
+        lineHeight: "1.3",
+        backgroundColor: getComputedStyle(document.documentElement).getPropertyValue("--bg") || "#f9f7f1",
+        padding: "8px",
+        borderRadius: "6px",
+        boxShadow: "2px 2px 6px rgba(0,0,0,0.1)",
+      });
+
+      // stop any clicks inside the popup from reaching the map
+      popupContainer.addEventListener("click", (e) => {
+        e.stopPropagation();
+      });
+
+      const img = new Image();
+      img.src = thumbUrl;
+      Object.assign(img.style, {
+        width: "100%",
+        height: "auto",
+        borderRadius: "4px",
+        cursor: fullUrl ? "pointer" : "default",
+        display: "block"
+      });
+
+      // bind click handler immediately so first click always works
+      if (fullUrl && typeof onThumbClick === "function") {
+        img.addEventListener("click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onThumbClick();
+        });
+      }
+
+      popupContainer.appendChild(img);
+
+      const titleDiv = document.createElement("div");
+      Object.assign(titleDiv.style, {
+        marginTop: "4px",
+        fontSize: "12px",
+        color: "#333",
+        wordWrap: "break-word",
+        overflowWrap: "break-word",
+      });
+      titleDiv.textContent = title ? `"${title}"` : "";
+      popupContainer.appendChild(titleDiv);
+
+      return popupContainer;
+    }
+
+    function zoomMapToCurrentAndShowPopup() {
+      const feature = navPhotoFeatures[currentPhotoIndex];
+      if (!feature) return;
+
+      map.easeTo({
+        center: feature.geometry.coordinates,
+        duration: 800,
+        zoom: 14
+      });
+
+      const popupDom = buildPhotoPopupDom({
+        thumbUrl: feature.properties.thumbs || "",
+        fullUrl: feature.properties.full || "",
+        title: feature.properties.title || "",
+        onThumbClick: () => {
+          enterFullscreenSafely();
+
+          if (window.currentPopup) {
+            window.currentPopup.remove();
+            window.currentPopup = null;
+          }
+          updateOverlayByIndex(currentPhotoIndex);
+        },
+      });
+
+      const popup = new maplibregl.Popup({
+          offset: 15,
+          closeOnClick: true
+        })
+        .setLngLat(feature.geometry.coordinates)
+        .setDOMContent(popupDom)
+        .addTo(map);
+
+      window.currentPopup = popup;
+    }
+
+    async function updateOverlayByIndex(index) {
+      if (navBusy) return;
+      navBusy = true;
+
+      try {
+        if (index < 0 || index >= navPhotoFeatures.length) return;
+
+        const feature = navPhotoFeatures[index];
+        currentPhotoIndex = index;
+
+        pz.reset();
+        containReleased = false;
+        enforceContain();
+
+        const fullUrl = feature.properties.full || "";
+        if (!fullUrl) return;
+
+        const title = feature.properties.title || "";
+        historic.src = fullUrl;
+        rephoto.src = "img/rephotos/" + fullUrl.split("/").pop();
+
+        const titleEl = document.getElementById("overlay-title");
+        titleEl.textContent = title;
+        if (!title.startsWith('"') && !title.endsWith('"')) {
+          titleEl.textContent = `"${title}"`;
+        }
+
+        dissolve.value = 0;
+        historic.style.opacity = 1;
+        rephoto.style.opacity = 0;
+
+        try {
+          if (!window.imageDescriptions) {
+            window.imageDescriptions = await loadDescriptions();
+          }
+
+          const match = fullUrl.match(/img\/full\/img_(\d+)\.jpg/);
+          const imageId = match ? match[1] : null;
+
+          const descriptionObj = window.imageDescriptions.find(item => {
+            const numMatch = item.title.match(/^"?(\d+)/);
+            return numMatch && numMatch[1] === imageId;
+          });
+
+          let descDiv = document.getElementById("photo-description");
+          if (!descDiv) {
+            descDiv = document.createElement("div");
+            descDiv.id = "photo-description";
+            descDiv.style.marginTop = "8px";
+            descDiv.style.overflowY = "auto";
+            descDiv.style.maxHeight = "100vh";
+            descDiv.style.fontSize = "0.9em";
+            descDiv.style.color = "#333";
+
+            const dissolveSlider = document.getElementById("dissolve-slider");
+            if (dissolveSlider) {
+              dissolveSlider.insertAdjacentElement("afterend", descDiv);
+            } else {
+              document.getElementById("overlay-sidebar")?.appendChild(descDiv);
+            }
+          }
+
+          let html = "";
+          html += descriptionObj ?
+            `<p>${descriptionObj.description}</p>` :
+            `<p>No description available.</p>`;
+
+          html += `
+        <p style="margin-top: 8px; color: #555; font-size: 0.9em;">
+          This has been abridged from the essay in the book.
+          <a href="https://skyscrapertowildflower.com/ordering-the-book/" target="_blank" rel="noopener noreferrer">
+            Order a copy here.
+          </a>
+        </p>
+      `;
+
+          descDiv.innerHTML = html;
+
+        } catch (err) {
+          console.error("Error loading image description:", err);
+        }
+
+        await openOverlayStable();
+        await waitImageReady(historic);
+
+        sizeWrapperToContainerBox();
+        resetToFit();
+        nudgeToImageRect();
+
+        await raf();
+        sizeWrapperToContainerBox();
+        resetToFit();
+        nudgeToImageRect();
+
+      } finally {
+        navBusy = false;
+      }
+    }
+
+    async function loadDescriptions() {
+      const response = await fetch("overlays/img_descriptions.csv");
+      const csvText = await response.text();
+      const parsed = Papa.parse(csvText, {
+        header: true,
+        skipEmptyLines: true
+      });
+      return parsed.data;
+    }
+
+    function extractNumberFromFull(fullUrl) {
+      if (!fullUrl) return null;
+      const m = fullUrl.match(/img_(\d+)\.jpg/i);
+      return m ? parseInt(m[1], 10) : null;
+    }
+
+    function extractLeadingNumberFromTitle(title) {
+      if (!title) return null;
+      const m = String(title).match(/^"?(\d+)/); // handles optional leading quote
+      return m ? parseInt(m[1], 10) : null;
+    }
+
+    function getPhotoSortKey(f) {
+      const fullNum = extractNumberFromFull(f?.properties?.full);
+      if (Number.isFinite(fullNum)) return fullNum;
+
+      const titleNum = extractLeadingNumberFromTitle(f?.properties?.title);
+      if (Number.isFinite(titleNum)) return titleNum;
+
+      // last resort: numeric id if possible
+      const idNum = typeof f.id === "number" ? f.id : parseInt(f.id, 10);
+      return Number.isFinite(idNum) ? idNum : Number.MAX_SAFE_INTEGER;
+    }
+
+    /* =====================================================
+       Overlay UI listeners
+    ====================================================== */
+    dissolve.addEventListener("input", (e) => {
+      const v = +e.target.value / 100;
+      rephoto.style.opacity = v;
+      historic.style.opacity = 1 - v;
+    });
+
+    document.getElementById("overlay-close-btn").addEventListener("click", async () => {
+      overlay.style.display = "none";
+      document.documentElement.style.overflow = "";
+
+      if (document.fullscreenElement) {
+        try {
+          await document.exitFullscreen();
+          await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+        } catch (err) {
+          console.warn("Failed to exit fullscreen:", err);
+        }
+      }
+
+      pz.reset();
+      containReleased = false;
+      zoomMapToCurrentAndShowPopup();
+    });
+
+    let resizeRaf = 0;
+    window.addEventListener("resize", () => {
+      if (overlay.style.display === "none") return;
+      cancelAnimationFrame(resizeRaf);
+      resizeRaf = requestAnimationFrame(() => {
+        centerNow();
+        nudgeToImageRect();
+      });
+    });
+
+    document.getElementById("prev-btn").addEventListener("click", () => {
+      if (currentPhotoIndex > 0) updateOverlayByIndex(currentPhotoIndex - 1);
+    });
+    document.getElementById("next-btn").addEventListener("click", () => {
+      if (currentPhotoIndex < navPhotoFeatures.length - 1)
+        updateOverlayByIndex(currentPhotoIndex + 1);
+    });
+    document.getElementById("prev-label").addEventListener("click", () => {
+      document.getElementById("prev-btn").click();
+    });
+    document.getElementById("next-label").addEventListener("click", () => {
+      document.getElementById("next-btn").click();
+    });
+
+    async function loadPhotosForNav(url, idPrefix = "photos") {
+      const data = await fetch(url).then(r => r.json());
+
+      return (data.features || []).map((f, i) => {
+        // pick a stable numeric key if present
+        const stableNum =
+          extractNumberFromFull(f?.properties?.full) ??
+          extractLeadingNumberFromTitle(f?.properties?.title) ??
+          i;
+
+        return {
+          type: "Feature",
+          // namespace so IDs can’t collide across layers
+          id: `${idPrefix}:${f.id ?? stableNum ?? i}`,
+          properties: f.properties || {},
+          geometry: f.geometry
+        };
+      });
+    }
+
+    /* =====================================================
+       Map content
+    ====================================================== */
+    map.on("load", async () => {
+
+      console.log("This is the new map!");
+
+      timeSlider.value = 1776;
+      timeYear.textContent = "1776";
+      slider.value = 0;
+
+      map.addSource("voyager", {
+        type: "raster",
+        tiles: ["https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png"],
+        tileSize: 256,
+      });
+      map.addLayer({
+        id: "voyager-raster-layer",
+        type: "raster",
+        source: "voyager",
+        paint: {
+          "raster-opacity": 0
+        },
+      }, "paper-fibers-layer");
+
+      fetch("overlays/Broadway_History.geojson")
+        .then((r) => r.json())
+        .then((data) => {
+          originalGeoJsonData = data;
+          const filtered = filterByYear(+timeSlider.value);
+          map.addSource("broadway-history", {
+            type: "geojson",
+            data: filtered
+          });
+          map.addLayer({
+            id: "broadway-history-layer",
+            type: "line",
+            source: "broadway-history",
+            layout: {
+              visibility: "visible"
+            },
+            paint: {
+              "line-color": "#8B5E3C",
+              "line-width": 3,
+              "line-opacity": 1,
+            },
+          });
+        });
+
+      /* Neighborhoods */
+      map.addSource("neighborhoods", {
+        type: "geojson",
+        data: "overlays/neighborhoods.geojson"
+      });
+
+      map.addLayer({
+        id: "neighborhoods-layer",
+        type: "line",
+        source: "neighborhoods",
+        layout: {
+          visibility: "none"
+        },
+        paint: {
+          "line-color": ["case", ["boolean", ["feature-state", "hover"], false], "#D8A903", "#006399"],
+          "line-width": ["case", ["boolean", ["feature-state", "hover"], false], 2, 0.5],
+          "line-opacity": 1,
+        },
+      });
+
+      map.addLayer({
+        id: "neighborhoods-fill-layer",
+        type: "fill",
+        source: "neighborhoods",
+        layout: {
+          visibility: "none"
+        },
+        paint: {
+          "fill-color": ["case", ["boolean", ["feature-state", "hover"], false], "#D8A903", "#006399"],
+          "fill-opacity": ["case", ["boolean", ["feature-state", "hover"], false], 0.3, 0.0]
+        }
+      });
+
+      /* Indian Trails */
+      map.addSource("indian-trails", {
+        type: "geojson",
+        data: "overlays/indian-trails.geojson"
+      });
+      map.addLayer({
+        id: "indian-trails-layer",
+        type: "line",
+        source: "indian-trails",
+        layout: {
+          visibility: "none"
+        },
+        paint: {
+          "line-color": ["case", ["boolean", ["feature-state", "hover"], false], "#D8A903", "#003153"],
+          "line-width": 2,
+          "line-opacity": 0.7,
+          "line-dasharray": [2, 4],
+        },
+      });
+
+      /* Elevated train */
+      map.addSource("elevated-train", {
+        type: "geojson",
+        data: "overlays/elevated-train.geojson"
+      });
+      map.addSource("elevated-stations", {
+        type: "geojson",
+        data: "overlays/elevated-stations.geojson"
+      });
+      map.addLayer({
+        id: "elevated-train-layer",
+        type: "line",
+        source: "elevated-train",
+        layout: {
+          visibility: "none"
+        },
+        paint: {
+          "line-color": ["case", ["boolean", ["feature-state", "hover"], false], "#D8A903", "#A67B5B"],
+          "line-width": 2,
+        },
+      });
+      map.addLayer({
+        id: "elevated-stations-layer",
+        type: "circle",
+        source: "elevated-stations",
+        layout: {
+          visibility: "none"
+        },
+        paint: {
+          "circle-radius": 4,
+          "circle-color": ["case", ["boolean", ["feature-state", "hover"], false], "#D8A903", "#4C6A72"],
+          "circle-stroke-color": "#f9f7f1",
+          "circle-stroke-width": 1,
+        },
+      });
+
+      /* Subway */
+      map.addSource("subway-lines", {
+        type: "geojson",
+        data: "overlays/subway.geojson"
+      });
+      map.addSource("subway-stations", {
+        type: "geojson",
+        data: "overlays/subway-stations.geojson"
+      });
+      map.addLayer({
+        id: "subway-lines-layer",
+        type: "line",
+        source: "subway-lines",
+        layout: {
+          visibility: "none"
+        },
+        paint: {
+          "line-color": ["case", ["boolean", ["feature-state", "hover"], false], "#D8A903", "#732E2E"],
+          "line-width": 2,
+        },
+      });
+      map.addLayer({
+        id: "subway-stations-layer",
+        type: "circle",
+        source: "subway-stations",
+        layout: {
+          visibility: "none"
+        },
+        paint: {
+          "circle-radius": 4,
+          "circle-color": ["case", ["boolean", ["feature-state", "hover"], false], "#D8A903", "#8A9A5B"],
+          "circle-stroke-color": "#f9f7f1",
+          "circle-stroke-width": 1,
+        },
+      });
+
+      /* Hover helpers */
+      const hoverState = {
+        neighborhoods: null,
+        indianTrails: null,
+        elevatedTrain: null,
+        elevatedStations: null,
+        subwayLines: null,
+        subwayStations: null
+      };
+
+      function hoverKeyForLayer(layerId) {
+        if (layerId.includes("neighborhoods")) return "neighborhoods";
+        if (layerId.includes("indian-trails")) return "indianTrails";
+        if (layerId.includes("elevated-train")) return "elevatedTrain";
+        if (layerId.includes("elevated-stations")) return "elevatedStations";
+        if (layerId.includes("subway-lines")) return "subwayLines";
+        if (layerId.includes("subway-stations")) return "subwayStations";
+        return null;
+      }
+
+      function addHover(layerId, sourceId, nameProp) {
+        const hoverPopup = new maplibregl.Popup({
+          closeButton: false,
+          closeOnClick: false
+        });
+
+        map.on("mousemove", layerId, (e) => {
+          if (!e.features.length) return;
+          const f = e.features[0];
+          const key = hoverKeyForLayer(layerId);
+          if (!key) return;
+
+          if (hoverState[key] !== null) {
+            map.setFeatureState({
+              source: sourceId,
+              id: hoverState[key]
+            }, {
+              hover: false
+            });
+          }
+
+          if (f.id !== undefined) {
+            map.setFeatureState({
+              source: sourceId,
+              id: f.id
+            }, {
+              hover: true
+            });
+            hoverState[key] = f.id;
+          }
+
+          map.getCanvas().style.cursor = "pointer";
+          const name = f.properties[nameProp] || "Unnamed";
+          hoverPopup.setLngLat(e.lngLat)
+            .setHTML(`<div style="font-family:'Fraunces',serif;font-size:12px;">${name}</div>`)
+            .addTo(map);
+        });
+
+        map.on("mouseleave", layerId, () => {
+          map.getCanvas().style.cursor = "";
+          hoverPopup.remove();
+          const key = hoverKeyForLayer(layerId);
+          if (hoverState[key] !== null) {
+            map.setFeatureState({
+              source: sourceId,
+              id: hoverState[key]
+            }, {
+              hover: false
+            });
+            hoverState[key] = null;
+          }
+        });
+      }
+
+      addHover("neighborhoods-fill-layer", "neighborhoods", "name");
+      addHover("indian-trails-layer", "indian-trails", "name");
+      addHover("elevated-train-layer", "elevated-train", "name");
+      addHover("elevated-stations-layer", "elevated-stations", "name");
+      addHover("subway-lines-layer", "subway-lines", "name");
+      addHover("subway-stations-layer", "subway-stations", "name");
+
+      /* Photos layer */
+      await loadSVGAsImage("camera", "svg/camera.svg");
+
+      // 1) FETCH ONCE + INJECT nav_id  ✅ PUT YOUR BLOCK HERE
+      const photoData = await fetch("overlays/photo_tags/signage.geojson")
+        .then(r => r.json());
+
+      // add nav_id to each feature
+      photoData.features.forEach((f, i) => {
+        const stableNum =
+          extractNumberFromFull(f?.properties?.full) ??
+          extractLeadingNumberFromTitle(f?.properties?.title) ??
+          i;
+
+        f.properties.nav_id = `signage:${f.id ?? stableNum ?? i}`;
+      });
+
+      // 2) ADD SOURCE USING MODIFIED DATA + promoteId
+      map.addSource("photos", {
+        type: "geojson",
+        data: photoData,
+        promoteId: "nav_id"   // critical: makes rendered feature.id = nav_id
+      });
+
+      map.addLayer({
+        id: "photos-layer",
+        type: "symbol",
+        source: "photos",
+        layout: {
+          "icon-image": "camera",
+          "icon-size": ["interpolate", ["linear"], ["zoom"], 10, 0.02, 15, 0.05],
+          "icon-allow-overlap": false,
+          "icon-anchor": "center",
+          "icon-rotate": ["+", ["get", "orientation"], 180],
+          "visibility": "visible",
+        },
+        paint: {
+          "icon-opacity": ["case", ["boolean", ["feature-state", "hover"], false], 0.5, 1],
+        },
+      });
+
+      // 3) BUILD NAV LIST FROM SAME MODIFIED DATA
+      photoFeatures = photoData.features.map(f => ({
+        type: "Feature",
+        id: f.properties.nav_id,   // matches MapLibre feature.id now
+        properties: f.properties || {},
+        geometry: f.geometry
+      }));
+
+      photoFeatures.sort((a,b) => getPhotoSortKey(a) - getPhotoSortKey(b));
+      rebuildNavList();
+
+      if (currentPhotoIndex === -1 && photoFeatures.length) {
+        currentPhotoIndex = 0;
+        zoomMapToCurrentAndShowPopup();
+      }
+
+      let hoveredPhotoId = null;
+      map.on("mousemove", "photos-layer", (e) => {
+        const fs = map.queryRenderedFeatures(e.point, {
+          layers: ["photos-layer"]
+        });
+        if (!fs.length) {
+          if (hoveredPhotoId !== null) {
+            map.setFeatureState({
+              source: "photos",
+              id: hoveredPhotoId
+            }, {
+              hover: false
+            });
+            hoveredPhotoId = null;
+          }
+          map.getCanvas().style.cursor = "";
+          return;
+        }
+        const f = fs[0];
+        if (hoveredPhotoId !== f.id) {
+          if (hoveredPhotoId !== null)
+            map.setFeatureState({
+              source: "photos",
+              id: hoveredPhotoId
+            }, {
+              hover: false
+            });
+          hoveredPhotoId = f.id;
+          map.setFeatureState({
+            source: "photos",
+            id: hoveredPhotoId
+          }, {
+            hover: true
+          });
+        }
+        map.getCanvas().style.cursor = "pointer";
+      });
+
+      map.on("mouseleave", "photos-layer", () => {
+        if (hoveredPhotoId !== null) {
+          map.setFeatureState({
+            source: "photos",
+            id: hoveredPhotoId
+          }, {
+            hover: false
+          });
+          hoveredPhotoId = null;
+        }
+        map.getCanvas().style.cursor = "";
+      });
+
+      map.on("click", "photos-layer", (e) => {
+        const feature = e.features[0];
+        const thumbUrl = feature.properties.thumbs || "";
+        const fullUrl = feature.properties.full || "";
+        const title = feature.properties.title || "";
+
+        currentPhotoIndex = idToNavIndex.has(feature.id) ? idToNavIndex.get(feature.id) : -1;
+        if (currentPhotoIndex === -1) return;
+        if (window.currentPopup) window.currentPopup.remove();
+
+        const popupDom = buildPhotoPopupDom({
+          thumbUrl,
+          fullUrl,
+          title,
+          onThumbClick: () => {
+            // Must be synchronous to count as a user gesture
+            enterFullscreenSafely();
+
+            if (window.currentPopup) {
+              window.currentPopup.remove();
+              window.currentPopup = null;
+            }
+
+            requestAnimationFrame(() => {
+              requestAnimationFrame(() => updateOverlayByIndex(currentPhotoIndex));
+            });
+          },
+        });
+
+        const popup = new maplibregl.Popup({
+            offset: 15,
+            closeOnClick: true
+          })
+          .setLngLat(feature.geometry.coordinates)
+          .setDOMContent(popupDom)
+          .addTo(map);
+
+        window.currentPopup = popup;
+
+      });
+
+      /* Layer toggles */
+      const setVisibility = (ids, visible) => {
+        const vis = visible ? "visible" : "none";
+        ids.forEach((id) => {
+          if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", vis);
+        });
+      };
+
+      setVisibility(["photos-layer"], photoToggle.checked);
+      setVisibility(["broadway-layer", "broadway-history-layer"], broadwayToggle.checked);
+      setVisibility(["subway-lines-layer", "subway-stations-layer"], subwayToggle.checked);
+      setVisibility(["elevated-train-layer", "elevated-stations-layer"], elevatedToggle.checked);
+      setVisibility(["indian-trails-layer"], indianTrailsToggle.checked);
+      setVisibility(["neighborhoods-fill-layer", "neighborhoods-layer"], neighborhoodToggle.checked);
+
+      photoToggle.addEventListener("change", () => {
+        const isVisible = photoToggle.checked;
+        setVisibility(["photos-layer"], isVisible);
+
+        if (!isVisible) {
+          map.setFilter("photos-layer", null);
+          rebuildNavList();
+        } else {
+          rebuildNavList();
+        }
+      });
+
+      neighborhoodToggle.addEventListener("change", () =>
+        setVisibility(["neighborhoods-fill-layer", "neighborhoods-layer"], neighborhoodToggle.checked)
+      );
+      indianTrailsToggle.addEventListener("change", () =>
+        setVisibility(["indian-trails-layer"], indianTrailsToggle.checked)
+      );
+      broadwayToggle.addEventListener("change", () =>
+        setVisibility(["broadway-layer", "broadway-history-layer"], broadwayToggle.checked)
+      );
+      subwayToggle.addEventListener("change", () =>
+        setVisibility(["subway-lines-layer", "subway-stations-layer"], subwayToggle.checked)
+      );
+      elevatedToggle.addEventListener("change", () =>
+        setVisibility(["elevated-train-layer", "elevated-stations-layer"], elevatedToggle.checked)
+      );
+
+      /* Opacity slider */
+      const originalOpacities = {};
+      map.once("idle", () => {
+        const style = map.getStyle();
+        if (!style || !style.layers) return;
+        style.layers.forEach((layer) => {
+          const {
+            id,
+            source,
+            type
+          } = layer;
+          if (source === "broadway") {
+            const props = {};
+            if (type === "fill") props["fill-opacity"] = map.getPaintProperty(id, "fill-opacity") ?? 1;
+            if (type === "line") props["line-opacity"] = map.getPaintProperty(id, "line-opacity") ?? 1;
+            if (type === "symbol") {
+              props["text-opacity"] = map.getPaintProperty(id, "text-opacity") ?? 1;
+              props["icon-opacity"] = map.getPaintProperty(id, "icon-opacity") ?? 1;
+            }
+            if (Object.keys(props).length) originalOpacities[id] = props;
+          }
+          if (id === "paper-fibers-layer" && type === "raster") {
+            originalOpacities[id] = {
+              "raster-opacity": map.getPaintProperty(id, "raster-opacity") ?? 1,
+            };
+          }
+        });
+
+        const applyOpacity = () => {
+          const multiplier = 1 - +slider.value / 100;
+          Object.entries(originalOpacities).forEach(([layerId, props]) => {
+            if (layerId === "voyager-raster-layer") return;
+            Object.entries(props).forEach(([prop, val]) =>
+              map.setPaintProperty(layerId, prop, val * multiplier)
+            );
+          });
+          if (map.getLayer("voyager-raster-layer"))
+            map.setPaintProperty("voyager-raster-layer", "raster-opacity", 1 - multiplier);
+        };
+
+        applyOpacity();
+        slider.addEventListener("input", applyOpacity);
+      });
+
+      /* Time slider */
+      timeSlider.addEventListener("input", () => {
+        const year = +timeSlider.value;
+        timeYear.textContent = String(year);
+        if (map.getSource("broadway-history"))
+          map.getSource("broadway-history").setData(filterByYear(year));
+        if (!broadwayToggle.checked) {
+          broadwayToggle.checked = true;
+          setVisibility(["broadway-layer", "broadway-history-layer"], true);
+        }
+      });
+
+    });
+  </script>
+</body>
+
+</html>
